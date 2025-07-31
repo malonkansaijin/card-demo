@@ -1,0 +1,27 @@
+// app/page.tsx
+
+console.log('+++ PAGE MOUNT +++');
+
+import { router } from 'expo-router';
+import { View, Button, StyleSheet } from 'react-native';
+
+export default function Home() {
+  return (
+    <View style={styles.root}>
+      <Button title="Open Packs"      onPress={() => router.push('/(tabs)')} />
+      <Button title="View Collection" onPress={() => router.push('/(tabs)/collection')} />
+      <Button title="Create Card"     color="#28a745" onPress={() => router.push('/create')} />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 24,
+  },
+});
+

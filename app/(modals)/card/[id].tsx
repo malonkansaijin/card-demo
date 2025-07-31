@@ -1,6 +1,7 @@
-/* app/(modals)/card/[id].tsx
-   1 枚カードの詳細モーダル
-   ─────────────────────────── */
+// app/(modals)/card/[id].tsx
+// ------------------------------------------------------------
+// カード 1 枚の詳細モーダル
+// ------------------------------------------------------------
 import 'react-native-url-polyfill/auto';
 import 'react-native-get-random-values';
 
@@ -16,15 +17,12 @@ import {
 } from 'react-native';
 import { IconButton } from 'react-native-paper';
 import { createClient } from '@supabase/supabase-js';
-import {
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY,
-} from '@env';
+import { EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY } from '@env';
 
-/* ───────── Supabase ───────── */
+/* ---------- Supabase ---------- */
 const supabase = createClient(
   EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY
+  EXPO_PUBLIC_SUPABASE_ANON_KEY,
 );
 
 type Card = {
@@ -36,11 +34,11 @@ type Card = {
 };
 
 export default function CardModal() {
-  /* ① URL パラメータ取得 （collection.tsx から渡す） */
+  /* ① URL パラメータ取得 */
   const { id } = useLocalSearchParams<{ id: string }>();
   const [card, setCard] = useState<Card | null>(null);
 
-  /* ② Supabase から 1 枚取得 */
+  /* ② Supabase から 1 枚取得 */
   useEffect(() => {
     if (!id) return;
 
@@ -56,7 +54,7 @@ export default function CardModal() {
     })();
   }, [id]);
 
-  /* ③ ローディング */
+  /* ③ ローディング表示 */
   if (!card) {
     return (
       <View style={styles.center}>
@@ -88,7 +86,7 @@ export default function CardModal() {
   );
 }
 
-/* ───────── スタイル ───────── */
+/* ---------- スタイル ---------- */
 const { width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({

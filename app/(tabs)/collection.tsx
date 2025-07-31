@@ -1,4 +1,7 @@
-/* app/(tabs)/collection.tsx */
+// app/(tabs)/collection.tsx
+// ------------------------------------------------------------
+// コレクション一覧タブ (ファイルを /collection.tsx に統一)
+// ------------------------------------------------------------
 import 'react-native-url-polyfill/auto';
 import 'react-native-get-random-values';
 
@@ -15,10 +18,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
-import {
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY,
-} from '@env';
+import { EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY } from '@env';
 import { router, useFocusEffect } from 'expo-router';
 
 /* ---------- Supabase ---------- */
@@ -47,7 +47,6 @@ export default function Collection() {
     const { data, error } = await supabase
       .from('collection')
       .select('card_id, cards ( img_url )')
-      // .eq('owner_id', userId)  ← ユーザ別にする場合
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -122,16 +121,15 @@ export default function Collection() {
   );
 }
 
-/* ---------- スタイル ---------- */
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000' },
   grid: {
     paddingHorizontal: 12,
     paddingTop: 60,
-    alignItems: 'flex-start', // 左寄せ
+    alignItems: 'flex-start',
     paddingBottom: 24,
   },
-  row: { justifyContent: 'flex-start' }, // 列ごと左寄せ
+  row: { justifyContent: 'flex-start' },
   cardWrap: { margin: 6 },
   card: {
     width: 110,
