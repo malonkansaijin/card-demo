@@ -3,17 +3,12 @@
     "name": "card-demo",
     "slug": "card-demo",
     "version": "1.0.0",
+    "sdkVersion": "53.0.20" , // 安定版 
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-
-    "scheme": "carddemo",              // ← Linking 用スキーム OK
+    "scheme": "carddemo",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-
-    "experimental": {                  // ← singular に修正
-      "typedRoutes": true
-    },
-
     "plugins": [
       "expo-router",
       [
@@ -27,21 +22,28 @@
       ],
       "expo-asset"
     ],
-
-    "ios": { "supportsTablet": true },
-
+    "ios": {
+      "supportsTablet": true
+    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.kansaijin.carddemo.v1"
     },
-
     "web": {
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png"
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7c39892b-e7d8-4e2b-ba11-31afc460b5b4"
+      }
+    },
+    "owner": "kansaijin"
   }
 }
