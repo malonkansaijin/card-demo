@@ -1,9 +1,8 @@
-//app/(tabs)/index.tsx の最終形:
-
 /* app/(tabs)/index.tsx */
 
 import 'react-native-url-polyfill/auto';
 import 'react-native-get-random-values';
+import CardImage from '../components/CardImage';
 
 import React, { useState } from 'react';
 import {
@@ -13,54 +12,120 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Button, Provider as PaperProvider } from 'react-native-paper';
 import { createClient } from '@supabase/supabase-js';
 import { Image } from 'expo-image';
-import {
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY,
-} from '@env';
+import { EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY } from '@env';
 
-const supabase = createClient(
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY
-);
+const supabase = createClient(EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY);
 
-type CardDefinition = { id: string; title: string; rarity: string; img_url: string };
+// バケット名
+const BUCKET = 'card-images';
+
+// バケットに実在するテンプレ画像名（スクショ準拠）
+const CARD_IMAGE_KEYS = {
+  '1':  'card_template_1.jpg',
+  'C':  'card_template_c.jpg',
+  'R':  'card_template_r.jpg',
+  'SR': 'card_template_sr.jpg',
+  'UR': 'card_template_ur.jpg',
+} as const;
+
+type CardDefinition = {
+  id: string | number;
+  title: string;
+  rarity: string;
+  // RPCを直したら image_key が返ってくる想定（例: "card_template_c.jpg"）
+  image_key?: string | null;
+  // 従来の値（署名付きURLだったり壊れていたり）— フォールバックで使う
+  img_url?: string | null;
+};
+
+// 署名URLを生成
+async function signFromKey(objectKey: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .storage
+    .from(BUCKET)
+    .createSignedUrl(objectKey, 60 * 10); // 10分
+
+  if (error || !data?.signedUrl) {
+    console.warn('createSignedUrl failed:', objectKey, error?.message);
+    return null;
+  }
+  return data.signedUrl;
+}
+
+// URLやレアリティから、必ず存在するキー名に正規化（RPCがimage_keyをまだ返してない場合の保険）
+function normalizeToExistingKey(card: CardDefinition): string {
+  // 1) URLに 'card_template_*' が含まれていればそれを使う
+  const m = (card.img_url ?? '').match(/card_template_(ur|sr|r|c|1)\.jpg/i);
+  if (m) {
+    const tag = m[1].toUpperCase() as keyof typeof CARD_IMAGE_KEYS; // 'UR' | 'SR' | 'R' | 'C' | '1'
+    return CARD_IMAGE_KEYS[tag];
+  }
+  // 2) レアリティから決め打ち
+  const r = (card.rarity ?? '').toUpperCase() as keyof typeof CARD_IMAGE_KEYS;
+  if (CARD_IMAGE_KEYS[r]) return CARD_IMAGE_KEYS[r];
+  // 3) 何も当たらなければ UR にフォールバック
+  return CARD_IMAGE_KEYS.UR;
+}
 
 export default function Home() {
   const [selectedPack, setSelectedPack] = useState<number | null>(null);
-  const [drawnCards, setDrawnCards] = useState<CardDefinition[]>([]);
+  const [drawnCards, setDrawnCards] = useState<Required<CardDefinition>[]>([]);
   const [loading, setLoading] = useState(false);
 
   const handlePackSelection = async (item: number) => {
+    if (loading) return;
     setSelectedPack(item);
     setLoading(true);
 
-    const { data, error } = await supabase.rpc('weighted_draw_replace', {
-      _set_id: 1,
-      _n: 5,
-    });
+    try {
+      // 抽選RPC：将来は image_key を返すようにしておく
+      const { data, error } = await supabase.rpc('weighted_draw_replace', {
+        _set_id: 1,
+        _n: 5,
+      });
+      if (error) throw error;
 
-    if (error) {
-      alert(error.message);
+      const drawn = (data ?? []) as CardDefinition[];
+
+      // image_key 優先で署名URL生成（無ければ正規化フォールバック）
+      const signed = await Promise.all(
+        drawn.map(async (c) => {
+          const key = (c.image_key && typeof c.image_key === 'string' && c.image_key.length > 0)
+            ? c.image_key
+            : normalizeToExistingKey(c);
+
+          const url = await signFromKey(key);
+          return {
+            id: c.id,
+            title: c.title,
+            rarity: c.rarity,
+            image_key: key,
+            img_url: url ?? '', // 表示に使うのはこの署名URL
+          } as Required<CardDefinition>;
+        })
+      );
+
+      setDrawnCards(signed);
+
+      // コレクション保存（失敗しても表示は続行）
+      const { error: insertError } = await supabase
+        .from('collection')
+        .insert(signed.map((card) => ({ card_id: card.id })));
+      if (insertError) {
+        console.warn('Insert to collection failed:', insertError.message);
+        Alert.alert('Save warning', insertError.message);
+      }
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Draw failed', e?.message ?? 'Unknown error');
+    } finally {
       setLoading(false);
-      return;
     }
-    
-    const drawnCardsData = data as CardDefinition[];
-    setDrawnCards(drawnCardsData);
-
-    const { error: insertError } = await supabase.from('collection').insert(
-      drawnCardsData.map((card) => ({ card_id: card.id }))
-    );
-
-    if (insertError) {
-        alert(insertError.message);
-    }
-
-    setLoading(false);
   };
 
   return (
@@ -77,10 +142,7 @@ export default function Home() {
             keyExtractor={(i) => i.toString()}
             renderItem={({ item }) => (
               <TouchableOpacity onPress={() => handlePackSelection(item)} disabled={loading}>
-                <Image
-                  source={require('../../assets/pack.png')}
-                  style={styles.pack}
-                />
+                <Image source={require('../../assets/pack.png')} style={styles.pack} />
               </TouchableOpacity>
             )}
           />
@@ -97,15 +159,10 @@ export default function Home() {
                 numColumns={3}
                 style={styles.fill}
                 contentContainerStyle={styles.centerList}
-                keyExtractor={(_, index) => index.toString()}
-                renderItem={({ item, index }) => (
-                  <Image
-                    key={index}
-                    source={{ uri: item.img_url }}
-                    style={styles.card}
-                    cachePolicy={'none'}
-                    transition={null}
-                  />
+                keyExtractor={(item, index) => String((item as any).id ?? index)}
+                extraData={drawnCards.length}
+                renderItem={({ item }) => (
+                  <CardImage src={item.img_url} style={styles.card} />
                 )}
               />
             )}
@@ -133,8 +190,8 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  fill:      { flex: 1 },
-  centerList:{ flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+  fill: { flex: 1 },
+  centerList: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
   pack: {
     width: 160,
     height: 240,
