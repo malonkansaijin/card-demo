@@ -1,133 +1,130 @@
-/* app/(modals)/card/[id].tsx
-   1 枚カードの詳細モーダル
-   ─────────────────────────── */
 import 'react-native-url-polyfill/auto';
-import 'react-native-get-random-values';
 
+import React, { useEffect, useRef, useState } from 'react';
+import { SafeAreaView, View, ActivityIndicator, StyleSheet, Button, Alert } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useEffect, useState } from 'react';
-import {
-  View,
-  Image,
-  Text,
-  StyleSheet,
-  ActivityIndicator,
-  Dimensions,
-} from 'react-native';
-import { IconButton } from 'react-native-paper';
-import { createClient } from '@supabase/supabase-js';
-import {
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY,
-} from '@env';
+import { Image as ExpoImage } from 'expo-image';
+import { supabase } from '@/lib/supabase';
 
-/* ───────── Supabase ───────── */
-const supabase = createClient(
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY
-);
+type CardRow = { img_url: string | null };
 
-type Card = {
-  id: string;
-  title: string;
-  rarity: string;
-  img_url: string;
-  created_at: string;
-};
+function parseStoragePath(raw: string) {
+  try {
+    const u = new URL(raw);
+    const m = u.pathname.match(
+      /\/storage\/v1\/(?:object|render\/image)\/(?:public|authenticated|sign)\/([^/]+)\/(.+)$/
+    );
+    return m ? { bucket: m[1], objectKey: m[2] } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function freshObjectSignedUrl(raw: string, expires = 600) {
+  const parsed = parseStoragePath(raw);
+  if (!parsed) return raw;
+  const { bucket, objectKey } = parsed;
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(objectKey, expires);
+  if (error || !data?.signedUrl) return raw;
+  return data.signedUrl; // /object/sign/...
+}
+
+function makeRenderUrl(raw: string, w = 1200) {
+  try {
+    const u = new URL(raw);
+    u.pathname = u.pathname.replace('/storage/v1/object/', '/storage/v1/render/image/');
+    u.searchParams.set('width', String(w));  // 拡大用は少し大きめ
+    u.searchParams.set('quality', '90');
+    u.searchParams.set('format', 'png');     // webp ではなく png に固定
+    return u.toString();
+  } catch {
+    const sep = raw.includes('?') ? '&' : '?';
+    return `${raw}${sep}width=${w}&quality=90&format=png`;
+  }
+}
+
+async function ensureInitialUrl(raw: string) {
+  // まず必ず新しい /object/sign を発行（これが一番安定）
+  return freshObjectSignedUrl(raw);
+}
+
+async function fallbackToRenderPng(raw: string) {
+  // 署名を取り直してから /render+png
+  const objUrl = await freshObjectSignedUrl(raw);
+  return makeRenderUrl(objUrl, 1200);
+}
 
 export default function CardModal() {
-  /* ① URL パラメータ取得 （collection.tsx から渡す） */
   const { id } = useLocalSearchParams<{ id: string }>();
-  const [card, setCard] = useState<Card | null>(null);
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const triedFallback = useRef(false);
 
-  /* ② Supabase から 1 枚取得 */
   useEffect(() => {
-    if (!id) return;
-
     (async () => {
-      const { data, error } = await supabase
-        .from('cards')
-        .select('*')
-        .eq('id', id)
-        .single<Card>();
+      try {
+        // cards テーブルから最小限で取得（img_url）
+        const { data, error } = await supabase
+          .from('cards')
+          .select('img_url')
+          .eq('id', id)
+          .maybeSingle<CardRow>();
+        if (error) throw error;
 
-      if (error) console.warn('Load card error:', error.message);
-      setCard(data);
+        if (!data?.img_url) {
+          Alert.alert('Not found', '画像URLが見つかりませんでした。');
+          setLoading(false);
+          return;
+        }
+
+        const initial = await ensureInitialUrl(data.img_url);
+        setUrl(initial);
+      } catch (e: any) {
+        Alert.alert('Load error', e?.message ?? 'Unknown error');
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [id]);
 
-  /* ③ ローディング */
-  if (!card) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#fff" />
-      </View>
-    );
-  }
+  const onError = async () => {
+    if (triedFallback.current || !url) return;
+    triedFallback.current = true;
+    const retry = await fallbackToRenderPng(url);
+    setUrl(retry);
+  };
 
-  /* ④ 詳細表示 */
   return (
-    <View style={styles.container}>
-      {/* ✕ ボタンで閉じる */}
-      <IconButton
-        icon="close"
-        iconColor="#fff"
-        size={30}
-        style={styles.close}
-        onPress={() => router.back()}
-      />
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.topBar}>
+        <Button title="Close" onPress={() => router.back()} />
+      </View>
 
-      <Image source={{ uri: card.img_url }} style={styles.image} />
-
-      <Text style={styles.title}>{card.title}</Text>
-      <Text style={styles.rarity}>{card.rarity}</Text>
-      <Text style={styles.date}>
-        Acquired&nbsp;:&nbsp;{new Date(card.created_at).toLocaleDateString()}
-      </Text>
-    </View>
+      {loading ? (
+        <ActivityIndicator size="large" style={{ marginTop: 24 }} />
+      ) : (
+        url && (
+          <ExpoImage
+            source={{ uri: url }}
+            style={styles.image}
+            contentFit="contain"    // 拡大表示（余白内に最大化）
+            transition={150}
+            cachePolicy="memory-disk"
+            allowDownscaling
+            onError={onError}
+          />
+        )
+      )}
+    </SafeAreaView>
   );
 }
 
-/* ───────── スタイル ───────── */
-const { width } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000',
-    alignItems: 'center',
-  },
-  close: {
-    position: 'absolute',
-    top: 48,
-    right: 24,
-    zIndex: 5,
-  },
+  safe: { flex: 1, backgroundColor: '#000' },
+  topBar: { padding: 8 },
   image: {
-    width: width * 0.8,
-    height: width * 1.12, // 7:5 比率程度
-    borderRadius: 12,
-    marginTop: 96,
-  },
-  title: {
-    marginTop: 24,
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#fff',
-  },
-  rarity: {
-    fontSize: 18,
-    color: '#ffd700',
-    marginTop: 4,
-  },
-  date: {
-    marginTop: 16,
-    color: '#888',
-  },
-  center: {
     flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: '100%',
+    // Webの影警告は出ないよう boxShadow のみ使いたい場合は必要に応じてここに条件分岐で追加
   },
 });

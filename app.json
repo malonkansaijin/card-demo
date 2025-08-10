@@ -3,26 +3,12 @@
     "name": "card-demo",
     "slug": "card-demo",
     "version": "1.0.0",
+    "sdkVersion": "53.0.20" , // 安定版 
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "carddemo",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "edgeToEdgeEnabled": true
-    },
-    "web": {
-      "bundler": "metro",
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
-    },
     "plugins": [
       "expo-router",
       [
@@ -36,8 +22,28 @@
       ],
       "expo-asset"
     ],
-    "experiments": {
-      "typedRoutes": true
-    }
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.kansaijin.carddemo.v1"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7c39892b-e7d8-4e2b-ba11-31afc460b5b4"
+      }
+    },
+    "owner": "kansaijin"
   }
 }

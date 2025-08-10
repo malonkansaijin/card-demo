@@ -1,62 +1,125 @@
 /* app/(tabs)/index.tsx */
-
 import 'react-native-url-polyfill/auto';
 import 'react-native-get-random-values';
+import CardImage from '../components/CardImage';
 
 import React, { useState } from 'react';
 import {
   SafeAreaView,
   View,
-  Image,
   FlatList,
   StyleSheet,
   TouchableOpacity,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Button, Provider as PaperProvider } from 'react-native-paper';
-import { createClient } from '@supabase/supabase-js';
-import {
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY,
-} from '@env';
+import { Image } from 'expo-image';
+import { supabase } from '@/lib/supabase';
 
-const supabase = createClient(
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY
-);
+// バケット名
+const BUCKET = 'card-images';
 
-type Card = { id: string; title: string; rarity: string; img_url: string };
+// バケットに実在するテンプレ画像名（スクショ準拠）
+const CARD_IMAGE_KEYS = {
+  '1':  'card_template_1.jpg',
+  'C':  'card_template_c.jpg',
+  'R':  'card_template_r.jpg',
+  'SR': 'card_template_sr.jpg',
+  'UR': 'card_template_ur.jpg',
+} as const;
+
+type CardDefinition = {
+  id: string | number;
+  title: string;
+  rarity: string;
+  image_key?: string | null;
+  img_url?: string | null;
+};
+
+// 署名URLを生成
+async function signFromKey(objectKey: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .storage
+    .from(BUCKET)
+    .createSignedUrl(objectKey, 60 * 10); // 10分
+
+  if (error || !data?.signedUrl) {
+    console.warn('createSignedUrl failed:', objectKey, error?.message);
+    return null;
+  }
+  return data.signedUrl;
+}
+
+// URLやレアリティから、必ず存在するキー名に正規化（RPCがimage_keyをまだ返してない場合の保険）
+function normalizeToExistingKey(card: CardDefinition): string {
+  const m = (card.img_url ?? '').match(/card_template_(ur|sr|r|c|1)\.jpg/i);
+  if (m) {
+    const tag = m[1].toUpperCase() as keyof typeof CARD_IMAGE_KEYS;
+    return CARD_IMAGE_KEYS[tag];
+  }
+  const r = (card.rarity ?? '').toUpperCase() as keyof typeof CARD_IMAGE_KEYS;
+  if (CARD_IMAGE_KEYS[r]) return CARD_IMAGE_KEYS[r];
+  return CARD_IMAGE_KEYS.UR;
+}
 
 export default function Home() {
   const [selectedPack, setSelectedPack] = useState<number | null>(null);
-  const [cards, setCards] = useState<Card[]>([]);
+  const [drawnCards, setDrawnCards] = useState<Required<CardDefinition>[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const openPack = async () => {
+  const handlePackSelection = async (item: number) => {
+    if (loading) return;
+    setSelectedPack(item);
     setLoading(true);
 
-    const { data, error } = await supabase.rpc('weighted_draw_replace', {
-      _set_id: 1,        // あなたの set_id
-      _n: 5,
-    });
+    try {
+      const { data, error } = await supabase.rpc('weighted_draw_replace', {
+        _set_id: 1,
+        _n: 5,
+      });
+      if (error) throw error;
 
-    if (error) {
-      alert(error.message);
-    } else {
-      const cardsArr = data as Card[];
-      setCards(cardsArr);
+      const drawn = (data ?? []) as CardDefinition[];
 
-      /* 🔽 引いたカードを collection テーブルへ保存 */
-      await supabase.from('collection').insert(
-        cardsArr.map((c) => ({ card_id: c.id }))
+      const signed = await Promise.all(
+        drawn.map(async (c) => {
+          const key = (c.image_key && typeof c.image_key === 'string' && c.image_key.length > 0)
+            ? c.image_key
+            : normalizeToExistingKey(c);
+
+          const url = await signFromKey(key);
+          return {
+            id: c.id,
+            title: c.title,
+            rarity: c.rarity,
+            image_key: key,
+            img_url: url ?? '',
+          } as Required<CardDefinition>;
+        })
       );
+
+      setDrawnCards(signed);
+
+      // コレクション保存（失敗しても表示は続行）
+      const { error: insertError } = await supabase
+        .from('collection')
+        .insert(signed.map((card) => ({ card_id: card.id })));
+      if (insertError) {
+        console.warn('Insert to collection failed:', insertError.message);
+        Alert.alert('Save warning', insertError.message);
+      }
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Draw failed', e?.message ?? 'Unknown error');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
     <PaperProvider>
       <SafeAreaView style={styles.container}>
-        {/* ── 縦中央エリア ── */}
         {selectedPack === null ? (
           <FlatList
             key="packs"
@@ -67,45 +130,43 @@ export default function Home() {
             showsHorizontalScrollIndicator={false}
             keyExtractor={(i) => i.toString()}
             renderItem={({ item }) => (
-              <TouchableOpacity onPress={() => setSelectedPack(item)}>
-                <Image
-                  source={require('../../assets/pack.png')}
-                  style={styles.pack}
-                />
+              <TouchableOpacity onPress={() => handlePackSelection(item)} disabled={loading}>
+                <Image source={require('../../assets/pack.png')} style={styles.pack} />
               </TouchableOpacity>
             )}
           />
         ) : (
-          <FlatList
-            key="cards"
-            data={cards}
-            numColumns={3}
-            style={styles.fill}
-            contentContainerStyle={styles.centerList}
-            keyExtractor={(item, i) => item.id + i}
-            renderItem={({ item }) => (
-              <Image source={{ uri: item.img_url }} style={styles.card} />
+          <View style={styles.fill}>
+            {loading ? (
+              <View style={styles.centerList}>
+                <ActivityIndicator size="large" />
+              </View>
+            ) : (
+              <FlatList
+                key="cards"
+                data={drawnCards}
+                numColumns={3}
+                style={styles.fill}
+                contentContainerStyle={styles.centerList}
+                keyExtractor={(item, index) => String((item as any).id ?? index)}
+                extraData={drawnCards.length}
+                renderItem={({ item }) => (
+                  <CardImage src={item.img_url} style={styles.card} />
+                )}
+              />
             )}
-          />
+          </View>
         )}
 
-        {/* ── 下部ボタン ── */}
-        {selectedPack !== null && (
+        {selectedPack !== null && !loading && (
           <View style={styles.bottomBar}>
             <Button
               mode="contained"
-              onPress={openPack}
-              loading={loading}
-              style={styles.openButton}
-            >
-              Open Pack #{selectedPack + 1}
-            </Button>
-            <Button
-              disabled={loading}
               onPress={() => {
                 setSelectedPack(null);
-                setCards([]);
+                setDrawnCards([]);
               }}
+              style={styles.openButton}
             >
               Choose another pack
             </Button>
@@ -118,11 +179,10 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  fill:      { flex: 1 },
-  centerList:{ flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
-
+  fill: { flex: 1 },
+  centerList: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
   pack: {
-    width: 160,          // ← 好みでサイズ調整
+    width: 160,
     height: 240,
     marginHorizontal: 8,
     borderRadius: 12,
@@ -137,7 +197,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ccc',
   },
-
   bottomBar: {
     position: 'absolute',
     bottom: 24,
