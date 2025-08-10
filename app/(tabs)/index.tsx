@@ -1,5 +1,4 @@
 /* app/(tabs)/index.tsx */
-
 import 'react-native-url-polyfill/auto';
 import 'react-native-get-random-values';
 import CardImage from '../components/CardImage';
@@ -15,11 +14,8 @@ import {
   Alert,
 } from 'react-native';
 import { Button, Provider as PaperProvider } from 'react-native-paper';
-import { createClient } from '@supabase/supabase-js';
 import { Image } from 'expo-image';
-import { EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY } from '@env';
-
-const supabase = createClient(EXPO_PUBLIC_SUPABASE_URL, EXPO_PUBLIC_SUPABASE_ANON_KEY);
+import { supabase } from '@/lib/supabase';
 
 // バケット名
 const BUCKET = 'card-images';
@@ -37,9 +33,7 @@ type CardDefinition = {
   id: string | number;
   title: string;
   rarity: string;
-  // RPCを直したら image_key が返ってくる想定（例: "card_template_c.jpg"）
   image_key?: string | null;
-  // 従来の値（署名付きURLだったり壊れていたり）— フォールバックで使う
   img_url?: string | null;
 };
 
@@ -59,16 +53,13 @@ async function signFromKey(objectKey: string): Promise<string | null> {
 
 // URLやレアリティから、必ず存在するキー名に正規化（RPCがimage_keyをまだ返してない場合の保険）
 function normalizeToExistingKey(card: CardDefinition): string {
-  // 1) URLに 'card_template_*' が含まれていればそれを使う
   const m = (card.img_url ?? '').match(/card_template_(ur|sr|r|c|1)\.jpg/i);
   if (m) {
-    const tag = m[1].toUpperCase() as keyof typeof CARD_IMAGE_KEYS; // 'UR' | 'SR' | 'R' | 'C' | '1'
+    const tag = m[1].toUpperCase() as keyof typeof CARD_IMAGE_KEYS;
     return CARD_IMAGE_KEYS[tag];
   }
-  // 2) レアリティから決め打ち
   const r = (card.rarity ?? '').toUpperCase() as keyof typeof CARD_IMAGE_KEYS;
   if (CARD_IMAGE_KEYS[r]) return CARD_IMAGE_KEYS[r];
-  // 3) 何も当たらなければ UR にフォールバック
   return CARD_IMAGE_KEYS.UR;
 }
 
@@ -83,7 +74,6 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // 抽選RPC：将来は image_key を返すようにしておく
       const { data, error } = await supabase.rpc('weighted_draw_replace', {
         _set_id: 1,
         _n: 5,
@@ -92,7 +82,6 @@ export default function Home() {
 
       const drawn = (data ?? []) as CardDefinition[];
 
-      // image_key 優先で署名URL生成（無ければ正規化フォールバック）
       const signed = await Promise.all(
         drawn.map(async (c) => {
           const key = (c.image_key && typeof c.image_key === 'string' && c.image_key.length > 0)
@@ -105,7 +94,7 @@ export default function Home() {
             title: c.title,
             rarity: c.rarity,
             image_key: key,
-            img_url: url ?? '', // 表示に使うのはこの署名URL
+            img_url: url ?? '',
           } as Required<CardDefinition>;
         })
       );

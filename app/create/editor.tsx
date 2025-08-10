@@ -1,12 +1,7 @@
 /* app/create/editor.tsx
    ------------------------------------------------------------
-   ✨ 改良点
-   1. 画像ハンドル完全非表示
-      - img.setControlsVisibility({...false}) + hasBorders:false で丸ハンドルを消去
-   2. 回転スライダー UI 追加
-      - <input type="range" id="rot" min="-45" max="45"> を Canvas の下に配置
-      - スライダー操作で img.rotate() しリアルタイム反映
-   3. ピンチ拡大・ドラッグ移動はそのまま維持
+   画像ハンドル非表示＋回転スライダーつきエディタ
+   Supabase クライアントは lib/supabase を使用（単一インスタンス化）
    ------------------------------------------------------------*/
 import 'react-native-url-polyfill/auto';
 import 'react-native-get-random-values';
@@ -16,23 +11,16 @@ import { View, Alert } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { useLocalSearchParams, router } from 'expo-router';
 import { v4 as uuid } from 'uuid';
-import { createClient } from '@supabase/supabase-js';
 import * as FileSystem from 'expo-file-system';
 import { Asset } from 'expo-asset';
-import {
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY,
-} from '@env';
+
+// ✅ 共通クライアントを使う（createClient/ENVは不要）
+import { supabase } from '@/lib/supabase';
 
 const framePngs = [
   require('../../assets/frames/frame1.png'),
   require('../../assets/frames/frame2.png'),
 ];
-
-const supabase = createClient(
-  EXPO_PUBLIC_SUPABASE_URL,
-  EXPO_PUBLIC_SUPABASE_ANON_KEY
-);
 
 export default function Editor() {
   const { photo: rawPhoto, frame: rawFrame } =
@@ -74,14 +62,28 @@ export default function Editor() {
     try {
       const fileName = `${uuid()}.png`;
       const base64 = msg.replace(/^data:image\/png;base64,/, '');
+
+      // 一旦キャッシュに保存（今のままでもOK）
       const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
-      await FileSystem.writeAsStringAsync(fileUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+      await FileSystem.writeAsStringAsync(fileUri, base64, {
+        encoding: FileSystem.EncodingType.Base64
+      });
+
+      // Supabase Storage へアップロード
       const { data, error } = await supabase.storage
         .from('user-cards')
-        .upload(fileName, await FileSystem.readAsStringAsync(fileUri, { encoding: FileSystem.EncodingType.Base64 }), {
-          contentType: 'image/png', upsert: true,
-        });
+        .upload(
+          fileName,
+          // ここでは base64文字列を渡しても環境によって動きますが、
+          // 必要なら Uint8Array 化して渡す実装にあとで置き換え可
+          await FileSystem.readAsStringAsync(fileUri, {
+            encoding: FileSystem.EncodingType.Base64
+          }) as unknown as any,
+          { contentType: 'image/png', upsert: true }
+        );
+
       if (error) throw error;
+
       await supabase.from('cards').insert({
         id: uuid(),
         owner_id: (await supabase.auth.getUser()).data.user?.id ?? null,
@@ -89,10 +91,12 @@ export default function Editor() {
         frame_idx: frameIdx,
         created_at: new Date().toISOString(),
       });
+
       Alert.alert('保存しました ✨');
-      router.replace('/collection');
+      // 戻るが効くように replace → push
+      router.push('/collection');
     } catch (err: any) {
-      Alert.alert('保存エラー', err.message);
+      Alert.alert('保存エラー', err.message ?? String(err));
     }
   }
 

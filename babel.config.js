@@ -3,16 +3,26 @@ module.exports = function (api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
-      // 既に別のプラグインがあるときはカンマ区切り
-      ['module:react-native-dotenv', {
-        moduleName: '@env',
-        path: '.env',
-        blacklist: null,
-        whitelist: null,
-        safe: false,
-        allowUndefined: true,
-      }],
-      'react-native-reanimated/plugin',
+      [
+        'module-resolver',
+        {
+          root: ['./'],
+          alias: { '@': './' },
+          extensions: ['.tsx', '.ts', '.js', '.json'],
+        },
+      ],
+      [
+        'module:react-native-dotenv',
+        {
+          moduleName: '@env',
+          path: '.env',
+          allowlist: [
+            'EXPO_PUBLIC_SUPABASE_URL',
+            'EXPO_PUBLIC_SUPABASE_ANON_KEY',
+          ],
+        },
+      ],
+      'expo-router/babel',
     ],
   };
 };

@@ -1,53 +1,46 @@
-# Learn more: https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+[200~# --- Dependencies ---
+node_modules/~
 
-# dependencies
-node_modules/
 
-# Expo
+
+# --- Expo ---
 .expo/
+.expo-shared/
 dist/
 web-build/
 expo-env.d.ts
+metro-cache/
 
-# Native build artifacts
+# --- Native / EAS secrets ---
 android/
 ios/
-*.apk
-*.aab
-*.app
-*.keystore
 *.jks
+*.keystore
 *.p8
 *.p12
 *.key
 *.mobileprovision
 
-# Metro bundler
-.metro-health-check*
-
-# Debug logs
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-pnpm-debug.*
-
-# macOS
-.DS_Store
-
-# SSL / Certificates
-*.pem
-
-# Local env files
+# --- Env files ---
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
-# TypeScript
-*.tsbuildinfo
+# --- Logs & caches ---
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+.cache/
+.tmp/
+temp/
+*.tmp
 
-# IDE / Editor settings
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
 .vscode/
-.idea/
 
-# Example or placeholder files
-app-example
+# --- Supabase local (生成物) ---
+supabase/.temp/
+supabase/.branches/
