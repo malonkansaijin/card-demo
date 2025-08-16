@@ -2,6 +2,7 @@
 import 'react-native-url-polyfill/auto';
 import 'react-native-get-random-values';
 import CardImage from '../components/CardImage';
+import { router } from 'expo-router';
 
 import React, { useState } from 'react';
 import {
@@ -120,14 +121,30 @@ export default function Home() {
   return (
     <PaperProvider>
       <SafeAreaView style={styles.container}>
+        {/* ▼ Homeナビ（パック選択画面で表示） */}
+        {selectedPack === null && (
+          <View style={styles.topBar}>
+            <Button mode="contained" onPress={() => router.push('/create')} style={styles.navBtn}>
+              Create
+            </Button>
+            <Button mode="contained" onPress={() => router.push('/(tabs)/collection')} style={styles.navBtn}>
+              Collection
+            </Button>
+            <Button mode="contained" onPress={() => router.push('/(tabs)/mycards')} style={styles.navBtn}>
+              My Cards
+            </Button>
+          </View>
+        )}
+
         {selectedPack === null ? (
+          // ▼ 「上段3 / 下段2」の縦グリッド
           <FlatList
-            key="packs"
+            key="packs-grid"
             data={[0, 1, 2, 3, 4]}
-            horizontal
+            numColumns={3}
             style={styles.fill}
-            contentContainerStyle={styles.centerList}
-            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.gridPacks}
+            columnWrapperStyle={styles.packRow}
             keyExtractor={(i) => i.toString()}
             renderItem={({ item }) => (
               <TouchableOpacity onPress={() => handlePackSelection(item)} disabled={loading}>
@@ -160,16 +177,22 @@ export default function Home() {
 
         {selectedPack !== null && !loading && (
           <View style={styles.bottomBar}>
-            <Button
-              mode="contained"
-              onPress={() => {
-                setSelectedPack(null);
-                setDrawnCards([]);
-              }}
-              style={styles.openButton}
-            >
-              Choose another pack
-            </Button>
+            <View style={styles.buttonsRow}>
+              <Button
+                mode="contained"
+                onPress={() => { router.replace('/home'); }}
+                style={styles.openButton}
+              >
+                Home
+              </Button>
+              <Button
+                mode="contained"
+                onPress={() => { router.push('/(tabs)/collection'); }}
+                style={styles.openButton}
+              >
+                Collection
+              </Button>
+            </View>
           </View>
         )}
       </SafeAreaView>
@@ -180,15 +203,39 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   fill: { flex: 1 },
-  centerList: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // ▼ Homeナビ
+  topBar: {
+    paddingTop: 8,
+    paddingBottom: 4,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#000',
+    zIndex: 10,
+  },
+  navBtn: { borderRadius: 24, backgroundColor: '#6b4fd3' },
+
+  // ▼ パック選択グリッド用
+  gridPacks: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+  packRow: { justifyContent: 'center' }, // 各行を中央寄せ（2個の行が真ん中に寄る）
   pack: {
-    width: 160,
-    height: 240,
-    marginHorizontal: 8,
+    width: 120, // 3列に収まるサイズ
+    height: 180,
+    marginHorizontal: 10,
+    marginVertical: 10,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#ccc',
   },
+
+  // ▼ カード表示
+  centerList: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
   card: {
     width: 100,
     height: 140,
@@ -197,6 +244,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#ccc',
   },
+
+  // ▼ 下部ボタン（パック開封後）
   bottomBar: {
     position: 'absolute',
     bottom: 24,
@@ -204,5 +253,6 @@ const styles = StyleSheet.create({
     right: 0,
     alignItems: 'center',
   },
-  openButton: { width: 220, marginBottom: 8 },
+  buttonsRow: { flexDirection: 'row' },
+  openButton: { width: 140, marginBottom: 8, marginHorizontal: 6, borderRadius: 24, backgroundColor: '#6b4fd3' },
 });
