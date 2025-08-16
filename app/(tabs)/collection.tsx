@@ -10,12 +10,12 @@ import {
   StyleSheet,
   Text,
   ActivityIndicator,
-  Button,
   TouchableOpacity,
   Alert,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Image as ExpoImage } from 'expo-image';
+import { Button, Provider as PaperProvider } from 'react-native-paper';
 import { supabase } from '@/lib/supabase';
 
 type Row  = { card_id: string; cards: { img_url: string } };
@@ -40,14 +40,15 @@ function makeRenderUrl(raw: string, w = 512) {
 function parseStoragePath(raw: string) {
   try {
     const u = new URL(raw);
-    const m = u.pathname.match(
-      /\/storage\/v1\/(?:object|render\/image)\/(?:public|authenticated|sign)\/([^/]+)\/(.+)$/
-    );
-    return m ? { bucket: m[1], objectKey: m[2] } : null;
-  } catch { return null; }
+    const m = u.pathname.match(/\/storage\/v1\/object\/(?:sign\/)?([^/]+)\/(.+)$/);
+    if (!m) return null;
+    return { bucket: m[1], objectKey: m[2] };
+  } catch {
+    return null;
+  }
 }
 
-// 常に新しい /object/sign を発行（初回はこれを使う）
+// 署名URLを新規発行
 async function freshObjectSignedUrl(raw: string, expires = 600) {
   const parsed = parseStoragePath(raw);
   if (!parsed) return raw;
@@ -97,16 +98,15 @@ export default function Collection() {
       else map.set(row.card_id, { card_id: row.card_id, img_url: row.cards.img_url, count: 1 });
     });
 
-    // 初回は /object/sign を全件発行
-    const normalized = await Promise.all(
+    // 画像URLに新規署名
+    const arr = await Promise.all(
       Array.from(map.values()).map(async (it) => ({
         ...it,
         img_url: await ensureInitialUrl(it.img_url),
       }))
     );
 
-    setItems(normalized);
-    triedFallback.current.clear();
+    setItems(arr);
     setLoading(false);
   }
 
@@ -117,7 +117,6 @@ export default function Collection() {
     const onError = async () => {
       if (triedFallback.current.has(item.card_id)) return;
       triedFallback.current.add(item.card_id);
-
       const retry = await fallbackToRenderPng(item.img_url);
       setItems((prev) =>
         prev.map((it) => (it.card_id === item.card_id ? { ...it, img_url: retry } : it)),
@@ -146,33 +145,45 @@ export default function Collection() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      {loading ? (
-        <ActivityIndicator size="large" style={{ marginTop: 32 }} />
-      ) : (
-        <FlatList
-          data={items}
-          numColumns={3}
-          keyExtractor={(it) => it.card_id}
-          contentContainerStyle={styles.grid}
-          columnWrapperStyle={styles.row}
-          renderItem={renderCard}
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Text style={{ color: '#888', marginBottom: 12 }}>No cards yet</Text>
-              <Button title="Open Packs!" onPress={() => router.push('/')} />
-            </View>
-          }
-        />
-      )}
-      <Button title="Back to Home" onPress={() => router.push('/')} />
-    </SafeAreaView>
+    <PaperProvider>
+      <SafeAreaView style={styles.safe}>
+        {loading ? (
+          <ActivityIndicator size="large" style={{ marginTop: 32 }} />
+        ) : (
+          <FlatList
+            data={items}
+            numColumns={3}
+            keyExtractor={(it) => it.card_id}
+            contentContainerStyle={styles.grid}
+            columnWrapperStyle={styles.row}
+            renderItem={renderCard}
+            ListEmptyComponent={
+              <View style={styles.emptyBox}>
+                <Text style={{ color: '#888', marginBottom: 12 }}>No cards yet</Text>
+                <Button mode="contained" onPress={() => router.replace('/home')}>Home</Button>
+              </View>
+            }
+          />
+        )}
+
+        {/* ▼ フッター：Home ボタンのみ */}
+        <View style={styles.bottomBar}>
+          <Button
+            mode="contained"
+            onPress={() => { router.replace('/home'); }}
+            style={styles.openButton}
+          >
+            Home
+          </Button>
+        </View>
+      </SafeAreaView>
+    </PaperProvider>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000' },
-  grid: { paddingHorizontal: 12, paddingTop: 60, alignItems: 'flex-start', paddingBottom: 24 },
+  grid: { paddingHorizontal: 12, paddingTop: 60, paddingBottom: 96, alignItems: 'flex-start' },
   row: { justifyContent: 'flex-start' },
   cardWrap: { margin: 6 },
   card: {
@@ -187,4 +198,14 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
   emptyBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // フッター（Open Packs の見た目と統一）
+  bottomBar: {
+    position: 'absolute',
+    bottom: 24,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  openButton: { width: 140, marginBottom: 8 },
 });

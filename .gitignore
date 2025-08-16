@@ -44,3 +44,24 @@ Thumbs.db
 # --- Supabase local (生成物) ---
 supabase/.temp/
 supabase/.branches/
+
+# deps & platform builds
+node_modules/
+android/
+
+# Expo/React Native caches & misc
+.expo/
+.expo-shared/
+web-build/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+.idea/
+.vscode/
+
+# env
+.env
+.env.*
+!/.env.example

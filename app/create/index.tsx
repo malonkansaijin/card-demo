@@ -1,130 +1,108 @@
-import { useState, useEffect } from 'react';
-import { View, Button, Image, StyleSheet, Alert } from 'react-native';
+// app/create/index.tsx
+import 'react-native-url-polyfill/auto';
+import React, { useState } from 'react';
+import { SafeAreaView, View, StyleSheet } from 'react-native';
+import { Provider as PaperProvider, Button, Text } from 'react-native-paper';
 import * as ImagePicker from 'expo-image-picker';
-import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
+import { setCreatePhoto } from '@/lib/createSession';
 
-export default function CreateScreen() {
-  const router = useRouter();
-  const { imageUri: initialImageUri, selectedFrame } = useLocalSearchParams<{
-    imageUri?: string;
-    selectedFrame?: string;
-  }>();
-  const [imageUri, setImageUri] = useState<string | null>(initialImageUri || null);
+export default function CreateTop() {
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    (async () => {
+  const pickPhoto = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      // 権限
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert('許可が必要です', 'カメラロールへのアクセスが許可されていません。');
+        alert('写真ライブラリへのアクセス許可が必要です');
         return;
       }
-    })();
-  }, []);
 
-  const pickImage = async () => {
-    try {
-      let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'image', // 非推奨を避けるため文字列を使用
-        allowsEditing: false,
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        base64: true,
         quality: 1,
+        allowsMultipleSelection: false,
       });
+      if (res.canceled) return;
 
-      if (!result.canceled && result.assets) {
-        console.log('Navigating to:', '/create/frame/index', { imageUri: result.assets[0].uri }); // デバッグ用ログ
-        router.push({
-          pathname: '/create/frame/index',
-          params: { imageUri: result.assets[0].uri },
-        });
-      } else {
-        Alert.alert('エラー', '写真の選択がキャンセルされました');
-      }
-    } catch (error) {
-      console.error('写真選択エラー:', error);
-      Alert.alert('エラー', '写真の選択に失敗しました。');
+      const asset = res.assets[0];
+      // base64 が無い環境（稀）に備えてフォールバック
+      let dataUrl = asset.base64
+        ? `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`
+        : await uriToDataURL(asset.uri);
+
+      setCreatePhoto(dataUrl);        // ← 一時ストアに保存
+      router.push('/create/frame');   // ← ここでは photo を渡さない
+    } catch (e: any) {
+      alert(e?.message ?? '画像の読み込みに失敗しました');
+    } finally {
+      setBusy(false);
     }
-  };
-
-  const createCard = async () => {
-    if (!imageUri || !selectedFrame) {
-      Alert.alert('エラー', '写真とフレームを選択してください。');
-      return;
-    }
-
-    try {
-      const cardImage = await ImageManipulator.manipulateAsync(
-        imageUri,
-        [
-          { resize: { width: 300, height: 420 } },
-          {
-            overlay: {
-              originX: 0,
-              originY: 0,
-              width: 300,
-              height: 420,
-              image: selectedFrame as string,
-            },
-          },
-        ],
-        { compress: 0.8, format: ImageManipulator.SaveFormat.PNG }
-      );
-
-      setImageUri(cardImage.uri);
-      Alert.alert('成功', 'トレカが作成されました！');
-    } catch (error) {
-      console.error('トレカ作成エラー:', error);
-      Alert.alert('エラー', 'トレカの作成に失敗しました。');
-    }
-  };
-
-  const saveCard = async () => {
-    if (!imageUri) {
-      Alert.alert('エラー', '保存するトレカがありません。');
-      return;
-    }
-
-    try {
-      const fileUri = `${FileSystem.documentDirectory}card_${Date.now()}.png`;
-      await FileSystem.copyAsync({ from: imageUri, to: fileUri });
-      Alert.alert('保存完了', `トレカが保存されました: ${fileUri}\nホームに戻ります。`, [
-        { text: 'OK', onPress: () => router.push('/') },
-      ]);
-    } catch (error) {
-      console.error('保存エラー:', error);
-      Alert.alert('エラー', 'トレカの保存に失敗しました。');
-    }
-  };
-
-  const cancel = () => {
-    router.push('/');
   };
 
   return (
-    <View style={styles.container}>
-      <Button title="写真を選択" onPress={pickImage} />
-      <Button title="トレカを作成" onPress={createCard} disabled={!imageUri || !selectedFrame} />
-      <Button title="トレカを保存" onPress={saveCard} disabled={!imageUri} />
-      <Button title="キャンセル" onPress={cancel} color="#ff4444" />
-      {imageUri && <Image source={{ uri: imageUri }} style={styles.image} />}
-    </View>
+    <PaperProvider>
+      <SafeAreaView style={styles.root}>
+        <Text style={styles.title}>トレカ作成</Text>
+        <View style={styles.center}>
+          <Button mode="contained" style={styles.btnPrimary} onPress={pickPhoto} loading={busy} disabled={busy}>
+            Create
+          </Button>
+          <Button mode="contained" style={styles.btnSecondary} onPress={() => router.push('/create/templates')}>
+            Frame Template
+          </Button>
+          <Button mode="contained" style={styles.btnSecondary} onPress={() => router.replace('/')}>
+            Home
+          </Button>
+        </View>
+      </SafeAreaView>
+    </PaperProvider>
   );
 }
 
+// fetch→blob→FileReader で DataURL 生成（Webフォールバック）
+async function uriToDataURL(uri: string): Promise<string> {
+  const res = await fetch(uri);
+  const blob = await res.blob();
+  const dataUrl: string = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onloadend = () => resolve(r.result as string);
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+  return dataUrl;
+}
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#1a1a1a',
+  root: { flex: 1, backgroundColor: '#000' },
+  title: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '700',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
-  image: {
-    width: 300,
-    height: 420,
-    resizeMode: 'contain',
-    marginTop: 20,
-    borderWidth: 1,
-    borderColor: '#fff',
+  center: {
+    flex: 1,
+    paddingHorizontal: 24,
+    justifyContent: 'center',
+    gap: 18,
+  },
+  btnPrimary: {
+    borderRadius: 28,
+    backgroundColor: '#6b4fd3',
+    height: 56,
+    justifyContent: 'center',
+  },
+  btnSecondary: {
+    borderRadius: 28,
+    backgroundColor: '#6b4fd3',
+    height: 56,
+    justifyContent: 'center',
   },
 });
